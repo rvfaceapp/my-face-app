@@ -1,169 +1,141 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Security Dashboard (iVCam Feed)</title>
-    <style>
-        body { 
-            margin: 0; 
-            background-color: #1e1e2e; 
-            color: #cdd6f4; 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-        }
-        header { 
-            background: #11111b; 
-            padding: 15px 20px; 
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center; 
-            border-bottom: 1px solid #313244;
-        }
-        .main-container { 
-            display: flex; 
-            padding: 20px; 
-            gap: 20px; 
-        }
-        .video-container { 
-            flex: 3; 
-            background: #11111b; 
-            border-radius: 8px; 
-            overflow: hidden; 
-            text-align: center; 
-            border: 1px solid #313244;
-            min-height: 480px;
-        }
-        #live-stream { 
-            width: 100%; 
-            height: auto; 
-            display: block; 
-        }
-        .control-panel { 
-            flex: 1; 
-            background: #181825; 
-            padding: 20px; 
-            border-radius: 8px; 
-            border: 1px solid #313244;
-        }
-        .status-box { 
-            padding: 15px; 
-            border-radius: 6px; 
-            background: #11111b; 
-            font-weight: bold; 
-            margin-bottom: 20px; 
-            text-align: center;
-        }
-        .status-normal { 
-            color: #a6e3a1; 
-            border: 1px solid #a6e3a1;
-        }
-        .status-alarm { 
-            color: #f38ba8; 
-            background: #451a28; 
-            border: 1px solid #f38ba8;
-            animation: pulse 1s infinite alternate; 
-        }
-        .status-disconnected {
-            color: #fab387;
-            border: 1px solid #fab387;
-        }
-        @keyframes pulse { 
-            from { opacity: 1; } 
-            to { opacity: 0.6; } 
-        }
-        .log-container { 
-            background: #11111b; 
-            padding: 10px; 
-            height: 320px; 
-            border-radius: 6px; 
-            font-family: monospace; 
-            font-size: 12px; 
-            overflow-y: auto; 
-            color: #89b4fa; 
-            border: 1px solid #313244;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Real-Time Face Recognition Dashboard</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #121212;
+      color: #ffffff;
+      margin: 0;
+      padding: 20px;
+      text-align: center;
+    }
+    h1 { margin-bottom: 5px; }
+    .status-panel {
+      margin: 15px auto;
+      padding: 10px 20px;
+      width: max-content;
+      border-radius: 8px;
+      background: #1e1e1e;
+      border: 1px solid #333;
+    }
+    .video-box {
+      margin: 20px auto;
+      max-width: 854px;
+      border: 3px solid #333;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    }
+    img { width: 100%; height: auto; display: block; }
+    .alarm-active {
+      border-color: #ff0033 !important;
+      animation: flash 1s infinite alternate;
+    }
+    @keyframes flash {
+      from { box-shadow: 0 0 10px #ff0033; }
+      to { box-shadow: 0 0 25px #ff0033; }
+    }
+    #log {
+      max-width: 854px;
+      margin: 10px auto;
+      text-align: left;
+      font-family: monospace;
+      font-size: 13px;
+      color: #888;
+      background: #0a0a0a;
+      padding: 10px;
+      border-radius: 5px;
+      height: 100px;
+      overflow-y: auto;
+    }
+  </style>
 </head>
 <body>
 
-<header>
-    <h2>🛡️ AI Security System — iVCam Web Feed</h2>
-    <span id="profiles-count">Approved Profiles: 0</span>
-</header>
+  <h1>Security Monitoring Feed</h1>
+  
+  <div class="status-panel" id="statusPanel">
+    Status: <span id="statusText" style="color: #ffcc00;">Connecting...</span> | 
+    Approved Profiles: <span id="profilesCount">0</span>
+  </div>
 
-<div class="main-container">
-    <div class="video-container">
-        <img id="live-stream" src="" alt="Connecting to iVCam Stream..." />
-    </div>
+  <div class="video-box" id="videoContainer">
+    <img id="streamFrame" src="" alt="Waiting for live stream connection...">
+  </div>
 
-    <div class="control-panel">
-        <div id="status-card" class="status-box status-disconnected">STATUS: CONNECTING...</div>
-        
-        <h3>Intruder Event Log</h3>
-        <div id="log-box" class="log-container"></div>
-    </div>
-</div>
+  <div id="log">--- Intruder Event Log ---<br></div>
 
-<script>
-    const streamImg = document.getElementById('live-stream');
-    const statusCard = document.getElementById('status-card');
-    const profilesSpan = document.getElementById('profiles-count');
-    const logBox = document.getElementById('log-box');
+  <script>
+    // =========================================================
+    // PASTE YOUR CLOUDFLARE DOMAIN HERE (Do not include https:// or wss://)
+    const CLOUDFLARE_DOMAIN = "YOUR-CLOUDFLARE-DOMAIN.trycloudflare.com"; 
+    // =========================================================
 
-    let alarmState = false;
+    const streamFrame = document.getElementById('streamFrame');
+    const statusText = document.getElementById('statusText');
+    const profilesCount = document.getElementById('profilesCount');
+    const videoContainer = document.getElementById('videoContainer');
+    const logDiv = document.getElementById('log');
+
     let ws;
 
-    function writeLog(msg) {
-        const time = new Date().toLocaleTimeString();
-        logBox.innerHTML += `[${time}] ${msg}<br>`;
-        logBox.scrollTop = logBox.scrollHeight;
+    function logMessage(msg) {
+      const time = new Date().toLocaleTimeString();
+      logDiv.innerHTML += `[${time}] ${msg}<br>`;
+      logDiv.scrollTop = logDiv.scrollHeight;
     }
 
     function connectWebSocket() {
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        ws = new WebSocket(`${wsProtocol}//${location.host}/ws/stream`);
+      // Constructs secure wss connection string for GitHub Pages HTTPS compatibility
+      const wsUrl = `wss://${CLOUDFLARE_DOMAIN}/ws/stream`;
+      logMessage(`Connecting to: ${wsUrl}`);
+      
+      ws = new WebSocket(wsUrl);
 
-        ws.onopen = () => {
-            writeLog("Connected to security stream.");
-            statusCard.innerText = "STATUS: ACTIVE";
-            statusCard.className = "status-box status-normal";
-        };
+      ws.onopen = () => {
+        statusText.innerText = "LIVE STREAM ACTIVE";
+        statusText.style.color = "#00ff66";
+        logMessage("Connected to python video engine successfully.");
+      };
 
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        
+        // Render base64 stream image frame
+        streamFrame.src = "data:image/jpeg;base64," + data.image;
+        profilesCount.innerText = data.profiles_count;
 
-            streamImg.src = "data:image/jpeg;base64," + data.image;
-            profilesSpan.innerText = `Approved Profiles: ${data.profiles_count}`;
+        // Alarm status toggle
+        if (data.alarm) {
+          videoContainer.classList.add('alarm-active');
+          statusText.innerText = "⚠️ ALARM: UNKNOWN FACE DETECTED";
+          statusText.style.color = "#ff0033";
+        } else {
+          videoContainer.classList.remove('alarm-active');
+          statusText.innerText = "MONITORING ACTIVE";
+          statusText.style.color = "#00ff66";
+        }
+      };
 
-            if (data.alarm) {
-                statusCard.innerText = "STATUS: ⚠️ ALARM TRIGGERED";
-                statusCard.className = "status-box status-alarm";
+      ws.onclose = () => {
+        statusText.innerText = "DISCONNECTED";
+        statusText.style.color = "#ff0033";
+        videoContainer.classList.remove('alarm-active');
+        logMessage("Disconnected from server. Reconnecting in 3 seconds...");
+        setTimeout(connectWebSocket, 3000);
+      };
 
-                if (!alarmState) {
-                    writeLog("<span style='color:#f38ba8;'>ALERT: Unknown Face Detected! Snapshot Recorded.</span>");
-                    alarmState = true;
-                }
-            } else {
-                statusCard.innerText = "STATUS: ACTIVE";
-                statusCard.className = "status-box status-normal";
-                alarmState = false;
-            }
-        };
-
-        ws.onclose = () => {
-            writeLog("Disconnected from server. Reconnecting in 3 seconds...");
-            statusCard.innerText = "STATUS: DISCONNECTED";
-            statusCard.className = "status-box status-disconnected";
-            setTimeout(connectWebSocket, 3000);
-        };
-
-        ws.onerror = (err) => {
-            console.error("WebSocket Error: ", err);
-            ws.close();
-        };
+      ws.onerror = (err) => {
+        console.error("WebSocket Error:", err);
+      };
     }
 
+    // Initialize connection
     connectWebSocket();
-</script>
+  </script>
 </body>
 </html>
