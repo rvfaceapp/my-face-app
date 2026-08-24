@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Security Dashboard (iVCam Feed)</title>
+    <style>
+        body { 
+            margin: 0; 
+            background-color: #1e1e2e; 
+            color: #cdd6f4; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+        }
+        header { 
+            background: #11111b; 
+            padding: 15px 20px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            border-bottom: 1px solid #313244;
+        }
+        .main-container { 
+            display: flex; 
+            padding: 20px; 
+            gap: 20px; 
+        }
+        .video-container { 
+            flex: 3; 
+            background: #11111b; 
+            border-radius: 8px; 
+            overflow: hidden; 
+            text-align: center; 
+            border: 1px solid #313244;
+            min-height: 480px;
+        }
+        #live-stream { 
+            width: 100%; 
+            height: auto; 
+            display: block; 
+        }
+        .control-panel { 
+            flex: 1; 
+            background: #181825; 
+            padding: 20px; 
+            border-radius: 8px; 
+            border: 1px solid #313244;
+        }
+        .status-box { 
+            padding: 15px; 
+            border-radius: 6px; 
+            background: #11111b; 
+            font-weight: bold; 
+            margin-bottom: 20px; 
+            text-align: center;
+        }
+        .status-normal { 
+            color: #a6e3a1; 
+            border: 1px solid #a6e3a1;
+        }
+        .status-alarm { 
+            color: #f38ba8; 
+            background: #451a28; 
+            border: 1px solid #f38ba8;
+            animation: pulse 1s infinite alternate; 
+        }
+        .status-disconnected {
+            color: #fab387;
+            border: 1px solid #fab387;
+        }
+        @keyframes pulse { 
+            from { opacity: 1; } 
+            to { opacity: 0.6; } 
+        }
+        .log-container { 
+            background: #11111b; 
+            padding: 10px; 
+            height: 320px; 
+            border-radius: 6px; 
+            font-family: monospace; 
+            font-size: 12px; 
+            overflow-y: auto; 
+            color: #89b4fa; 
+            border: 1px solid #313244;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h2>🛡️ AI Security System — iVCam Web Feed</h2>
+    <span id="profiles-count">Approved Profiles: 0</span>
+</header>
+
+<div class="main-container">
+    <div class="video-container">
+        <img id="live-stream" src="" alt="Connecting to iVCam Stream..." />
+    </div>
+
+    <div class="control-panel">
+        <div id="status-card" class="status-box status-disconnected">STATUS: CONNECTING...</div>
+        
+        <h3>Intruder Event Log</h3>
+        <div id="log-box" class="log-container"></div>
+    </div>
+</div>
+
+<script>
+    const streamImg = document.getElementById('live-stream');
+    const statusCard = document.getElementById('status-card');
+    const profilesSpan = document.getElementById('profiles-count');
+    const logBox = document.getElementById('log-box');
+
+    let alarmState = false;
+    let ws;
+
+    function writeLog(msg) {
+        const time = new Date().toLocaleTimeString();
+        logBox.innerHTML += `[${time}] ${msg}<br>`;
+        logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    function connectWebSocket() {
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        ws = new WebSocket(`${wsProtocol}//${location.host}/ws/stream`);
+
+        ws.onopen = () => {
+            writeLog("Connected to security stream.");
+            statusCard.innerText = "STATUS: ACTIVE";
+            statusCard.className = "status-box status-normal";
+        };
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+
+            streamImg.src = "data:image/jpeg;base64," + data.image;
+            profilesSpan.innerText = `Approved Profiles: ${data.profiles_count}`;
+
+            if (data.alarm) {
+                statusCard.innerText = "STATUS: ⚠️ ALARM TRIGGERED";
+                statusCard.className = "status-box status-alarm";
+
+                if (!alarmState) {
+                    writeLog("<span style='color:#f38ba8;'>ALERT: Unknown Face Detected! Snapshot Recorded.</span>");
+                    alarmState = true;
+                }
+            } else {
+                statusCard.innerText = "STATUS: ACTIVE";
+                statusCard.className = "status-box status-normal";
+                alarmState = false;
+            }
+        };
+
+        ws.onclose = () => {
+            writeLog("Disconnected from server. Reconnecting in 3 seconds...");
+            statusCard.innerText = "STATUS: DISCONNECTED";
+            statusCard.className = "status-box status-disconnected";
+            setTimeout(connectWebSocket, 3000);
+        };
+
+        ws.onerror = (err) => {
+            console.error("WebSocket Error: ", err);
+            ws.close();
+        };
+    }
+
+    connectWebSocket();
+</script>
+</body>
+</html>
