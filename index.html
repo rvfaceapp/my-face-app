@@ -3,139 +3,218 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Real-Time Face Recognition Dashboard</title>
+  <title>Multi-Tenant AI Security Portal</title>
   <style>
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background-color: #121212;
-      color: #ffffff;
-      margin: 0;
-      padding: 20px;
-      text-align: center;
-    }
-    h1 { margin-bottom: 5px; }
-    .status-panel {
-      margin: 15px auto;
-      padding: 10px 20px;
-      width: max-content;
-      border-radius: 8px;
-      background: #1e1e1e;
-      border: 1px solid #333;
-    }
-    .video-box {
-      margin: 20px auto;
-      max-width: 854px;
-      border: 3px solid #333;
-      border-radius: 8px;
-      overflow: hidden;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-    }
-    img { width: 100%; height: auto; display: block; }
-    .alarm-active {
-      border-color: #ff0033 !important;
-      animation: flash 1s infinite alternate;
-    }
-    @keyframes flash {
-      from { box-shadow: 0 0 10px #ff0033; }
-      to { box-shadow: 0 0 25px #ff0033; }
-    }
-    #log {
-      max-width: 854px;
-      margin: 10px auto;
-      text-align: left;
-      font-family: monospace;
-      font-size: 13px;
-      color: #888;
-      background: #0a0a0a;
-      padding: 10px;
-      border-radius: 5px;
-      height: 100px;
-      overflow-y: auto;
-    }
+    * { box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #121212; color: #fff; margin: 0; padding: 20px; }
+    .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; max-width: 1300px; margin: 0 auto; }
+    .card { background: #1e1e1e; padding: 20px; border-radius: 8px; border: 1px solid #333; margin-bottom: 20px; }
+    input, button, select { width: 100%; padding: 10px; margin-top: 8px; border-radius: 4px; border: 1px solid #444; background: #2a2a2a; color: #fff; }
+    button { background: #007bff; font-weight: bold; cursor: pointer; border: none; }
+    button:hover { background: #0056b3; }
+    .video-box { width: 100%; background: #000; border-radius: 8px; overflow: hidden; border: 3px solid #333; }
+    img#streamFrame { width: 100%; display: block; }
+    .alarm { border-color: #ff0033 !important; }
+    .hidden { display: none; }
+    .status { font-size: 0.9em; margin-top: 5px; }
   </style>
 </head>
 <body>
 
-  <h1>Security Monitoring Feed</h1>
-  
-  <div class="status-panel" id="statusPanel">
-    Status: <span id="statusText" style="color: #ffcc00;">Connecting...</span> | 
-    Approved Profiles: <span id="profilesCount">0</span>
+  <h2 style="text-align: center;">Multi-Tenant AI Vision Security Engine</h2>
+
+  <!-- Auth Section -->
+  <div id="authSection" class="card" style="max-width: 400px; margin: 40px auto;">
+    <h3 id="formTitle">Login</h3>
+    <input type="text" id="authUsername" placeholder="Username" required />
+    <input type="password" id="authPassword" placeholder="Password" required />
+    <button id="authBtn" onclick="handleAuth()">Sign In</button>
+    <p style="text-align: center; font-size: 0.85em; cursor: pointer;" onclick="toggleAuthMode()">
+      <span id="toggleText">Need an account? Register here</span>
+    </p>
+    <div id="authStatus" class="status"></div>
   </div>
 
-  <div class="video-box" id="videoContainer">
-    <img id="streamFrame" src="" alt="Waiting for live stream connection...">
-  </div>
+  <!-- Main Application Workspace -->
+  <div id="appSection" class="grid hidden">
+    <div>
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <h3 style="margin: 0;">Live Video Stream</h3>
+          <span>Profiles Loaded: <strong id="profileCount">0</strong></span>
+        </div>
+        <div class="video-box" id="videoBox">
+          <img id="streamFrame" src="" alt="Connecting to stream..." />
+        </div>
+      </div>
+    </div>
 
-  <div id="log">--- Intruder Event Log ---<br></div>
+    <div>
+      <div class="card">
+        <h3>Camera Feeds</h3>
+        <select id="cameraSelect" onchange="switchCamera()"></select>
+        <form id="camForm" onsubmit="addCamera(event)">
+          <input type="text" id="camName" placeholder="Camera Name (e.g. Front Gate)" required />
+          <input type="text" id="camUrl" placeholder="RTSP URL or Camera ID (0)" required />
+          <button type="submit">Add Camera Source</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h3>Enroll Approved Face</h3>
+        <form id="faceForm" onsubmit="uploadFace(event)">
+          <input type="text" id="personName" placeholder="Person's Full Name" required />
+          <input type="file" id="facePhotos" multiple accept="image/*" required />
+          <button type="submit">Upload & Train Face Model</button>
+        </form>
+        <div id="uploadStatus" class="status"></div>
+      </div>
+      
+      <button style="background: #dc3545;" onclick="logout()">Sign Out</button>
+    </div>
+  </div>
 
   <script>
-    // =========================================================
-    // PASTE YOUR CLOUDFLARE DOMAIN HERE (Do not include https:// or wss://)
-    const CLOUDFLARE_DOMAIN = "particular-drug-operate-rapids.trycloudflare.com"; 
-    // =========================================================
+    // Set your Cloudflare domain
+    const CLOUDFLARE_DOMAIN = "particular-drug-operate-rapids.trycloudflare.com";
+    const API_URL = `https://${CLOUDFLARE_DOMAIN}`;
+    const WS_URL = `wss://${CLOUDFLARE_DOMAIN}/ws/stream`;
 
-    const streamFrame = document.getElementById('streamFrame');
-    const statusText = document.getElementById('statusText');
-    const profilesCount = document.getElementById('profilesCount');
-    const videoContainer = document.getElementById('videoContainer');
-    const logDiv = document.getElementById('log');
+    let token = localStorage.getItem("jwt_token");
+    let isRegisterMode = false;
+    let ws = null;
 
-    let ws;
+    if (token) showApp();
 
-    function logMessage(msg) {
-      const time = new Date().toLocaleTimeString();
-      logDiv.innerHTML += `[${time}] ${msg}<br>`;
-      logDiv.scrollTop = logDiv.scrollHeight;
+    function toggleAuthMode() {
+      isRegisterMode = !isRegisterMode;
+      document.getElementById("formTitle").innerText = isRegisterMode ? "Register Account" : "Login";
+      document.getElementById("authBtn").innerText = isRegisterMode ? "Register" : "Sign In";
+      document.getElementById("toggleText").innerText = isRegisterMode ? "Already have an account? Login" : "Need an account? Register here";
     }
 
-    function connectWebSocket() {
-      // Constructs secure wss connection string for GitHub Pages HTTPS compatibility
-      const wsUrl = `wss://${CLOUDFLARE_DOMAIN}/ws/stream`;
-      logMessage(`Connecting to: ${wsUrl}`);
-      
-      ws = new WebSocket(wsUrl);
+    async function handleAuth() {
+      const u = document.getElementById("authUsername").value;
+      const p = document.getElementById("authPassword").value;
+      const statusDiv = document.getElementById("authStatus");
 
-      ws.onopen = () => {
-        statusText.innerText = "LIVE STREAM ACTIVE";
-        statusText.style.color = "#00ff66";
-        logMessage("Connected to python video engine successfully.");
-      };
+      if (isRegisterMode) {
+        const res = await fetch(`${API_URL}/api/register`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: u, password: p })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          statusDiv.style.color = "#00ff66";
+          statusDiv.innerText = "Account created! You can now log in.";
+          toggleAuthMode();
+        } else {
+          statusDiv.style.color = "#ff3333";
+          statusDiv.innerText = data.detail;
+        }
+      } else {
+        const formData = new FormData();
+        formData.append("username", u);
+        formData.append("password", p);
+        const res = await fetch(`${API_URL}/token`, { method: "POST", body: formData });
+        const data = await res.json();
+        if (res.ok) {
+          token = data.access_token;
+          localStorage.setItem("jwt_token", token);
+          showApp();
+        } else {
+          statusDiv.style.color = "#ff3333";
+          statusDiv.innerText = data.detail;
+        }
+      }
+    }
 
+    function showApp() {
+      document.getElementById("authSection").classList.add("hidden");
+      document.getElementById("appSection").classList.remove("hidden");
+      loadCameras();
+      connectWS();
+    }
+
+    function logout() {
+      localStorage.removeItem("jwt_token");
+      if (ws) ws.close();
+      location.reload();
+    }
+
+    async function loadCameras() {
+      const res = await fetch(`${API_URL}/api/cameras`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const cams = await res.json();
+      const select = document.getElementById("cameraSelect");
+      select.innerHTML = `<option value="">Default Webcam (0)</option>`;
+      cams.forEach(c => {
+        select.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+      });
+    }
+
+    async function addCamera(e) {
+      e.preventDefault();
+      const form = new FormData();
+      form.append("name", document.getElementById("camName").value);
+      form.append("url", document.getElementById("camUrl").value);
+      await fetch(`${API_URL}/api/cameras`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` },
+        body: form
+      });
+      document.getElementById("camForm").reset();
+      loadCameras();
+    }
+
+    async function uploadFace(e) {
+      e.preventDefault();
+      const form = new FormData();
+      form.append("person_name", document.getElementById("personName").value);
+      const files = document.getElementById("facePhotos").files;
+      for (let f of files) form.append("files", f);
+
+      const res = await fetch(`${API_URL}/api/faces/upload`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` },
+        body: form
+      });
+      const data = await res.json();
+      const statusDiv = document.getElementById("uploadStatus");
+      if (res.ok) {
+        statusDiv.style.color = "#00ff66";
+        statusDiv.innerText = `Uploaded photos for ${data.person}!`;
+        document.getElementById("faceForm").reset();
+      }
+    }
+
+    function switchCamera() {
+      if (ws) ws.close();
+      connectWS();
+    }
+
+    function connectWS() {
+      const camId = document.getElementById("cameraSelect").value;
+      let url = `${WS_URL}?token=${token}`;
+      if (camId) url += `&camera_id=${camId}`;
+
+      ws = new WebSocket(url);
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        
-        // Render base64 stream image frame
-        streamFrame.src = "data:image/jpeg;base64," + data.image;
-        profilesCount.innerText = data.profiles_count;
-
-        // Alarm status toggle
+        document.getElementById("streamFrame").src = "data:image/jpeg;base64," + data.image;
+        document.getElementById("profileCount").innerText = data.profiles_count;
         if (data.alarm) {
-          videoContainer.classList.add('alarm-active');
-          statusText.innerText = "⚠️ ALARM: UNKNOWN FACE DETECTED";
-          statusText.style.color = "#ff0033";
+          document.getElementById("videoBox").classList.add("alarm");
         } else {
-          videoContainer.classList.remove('alarm-active');
-          statusText.innerText = "MONITORING ACTIVE";
-          statusText.style.color = "#00ff66";
+          document.getElementById("videoBox").classList.remove("alarm");
         }
       };
-
       ws.onclose = () => {
-        statusText.innerText = "DISCONNECTED";
-        statusText.style.color = "#ff0033";
-        videoContainer.classList.remove('alarm-active');
-        logMessage("Disconnected from server. Reconnecting in 3 seconds...");
-        setTimeout(connectWebSocket, 3000);
-      };
-
-      ws.onerror = (err) => {
-        console.error("WebSocket Error:", err);
+        setTimeout(() => { if (token) connectWS(); }, 3000);
       };
     }
-
-    // Initialize connection
-    connectWebSocket();
   </script>
 </body>
 </html>
